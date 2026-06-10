@@ -6,10 +6,12 @@ use App\Repository\UserRepository;
 use Doctrine\Common\Collections\ArrayCollection;
 use Doctrine\Common\Collections\Collection;
 use Doctrine\ORM\Mapping as ORM;
+use Symfony\Component\Security\Core\User\UserInterface;
+use Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface;
 
 #[ORM\Entity(repositoryClass: UserRepository::class)]
 #[ORM\Table(name: 'users')]
-class User
+class User implements UserInterface, PasswordAuthenticatedUserInterface
 {
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -25,12 +27,10 @@ class User
     #[ORM\Column(length: 255)]
     private ?string $password = null;
 
-    #[ORM\ManyToOne]
+    // relation role propre
+    #[ORM\ManyToOne(inversedBy: 'users')]
     #[ORM\JoinColumn(nullable: false)]
     private ?Role $role = null;
-
-    #[ORM\ManyToOne(inversedBy: 'users')]
-    private ?Role $Role = null;
 
     /**
      * @var Collection<int, Engagement>
@@ -41,6 +41,38 @@ class User
     public function __construct()
     {
         $this->engagements = new ArrayCollection();
+    }
+
+    // ======================
+    // SECURITY METHODS
+    // ======================
+
+    public function getUserIdentifier(): string
+    {
+        return $this->matricule;
+    }
+
+    public function eraseCredentials(): void
+    {
+        // rien pour l'instant
+    }
+
+    //  VERSION PROPRE DES ROLES (IMPORTANT)
+    public function getRoles(): array
+    {
+        $roles = [];
+
+        if ($this->role !== null) {
+            // on prend directement le nom du rôle
+            $roles[] = strtoupper($this->role->getNom());
+        }
+
+        // sécurité minimale Symfony
+        if (!in_array('ROLE_USER', $roles, true)) {
+            $roles[] = 'ROLE_USER';
+        }
+
+        return array_unique($roles);
     }
 
     // ======================
@@ -117,7 +149,6 @@ class User
     public function removeEngagement(Engagement $engagement): static
     {
         if ($this->engagements->removeElement($engagement)) {
-            // set the owning side to null (unless already changed)
             if ($engagement->getUsers() === $this) {
                 $engagement->setUsers(null);
             }
