@@ -21,8 +21,8 @@ class UniteOperationnelle
     #[ORM\Column(length: 20, nullable: true)]
     private ?string $code = null;
 
-    #[ORM\ManyToOne(inversedBy: 'uniteOperationnelles')]
-    private ?administration $administration = null;
+    #[ORM\ManyToOne(targetEntity: Administration::class, inversedBy: 'uniteOperationnelles')]
+    private ?Administration $administration = null;
 
     /**
      * @var Collection<int, Budget>
@@ -64,12 +64,12 @@ class UniteOperationnelle
         return $this;
     }
 
-    public function getAdministration(): ?administration
+    public function getAdministration(): ?Administration
     {
         return $this->administration;
     }
 
-    public function setAdministration(?administration $administration): static
+    public function setAdministration(?Administration $administration): static
     {
         $this->administration = $administration;
 
