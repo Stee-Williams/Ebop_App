@@ -27,9 +27,16 @@ class Province
     #[ORM\OneToMany(targetEntity: Administration::class, mappedBy: 'province')]
     private Collection $administrations;
 
+    /**
+     * @var Collection<int, User>
+     */
+    #[ORM\OneToMany(targetEntity: User::class, mappedBy: 'province')]
+    private Collection $users;
+
     public function __construct()
     {
         $this->administrations = new ArrayCollection();
+        $this->users = new ArrayCollection();
     }
 
     // ======================
@@ -87,6 +94,35 @@ class Province
             // set the owning side to null (unless already changed)
             if ($administration->getProvince() === $this) {
                 $administration->setProvince(null);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, User>
+     */
+    public function getUsers(): Collection
+    {
+        return $this->users;
+    }
+
+    public function addUser(User $user): static
+    {
+        if (!$this->users->contains($user)) {
+            $this->users->add($user);
+            $user->setProvince($this);
+        }
+
+        return $this;
+    }
+
+    public function removeUser(User $user): static
+    {
+        if ($this->users->removeElement($user)) {
+            if ($user->getProvince() === $this) {
+                $user->setProvince(null);
             }
         }
 

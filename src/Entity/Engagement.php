@@ -18,6 +18,9 @@ class Engagement
     #[ORM\Column(length: 50, unique: true)]
     private ?string $numero = null;
 
+    #[ORM\Column(length: 255, nullable: true)]
+    private ?string $titre = null;
+
     #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 2)]
     private ?string $montant = null;
 
@@ -56,6 +59,18 @@ class Engagement
     public function setNumero(string $numero): static
     {
         $this->numero = $numero;
+        return $this;
+    }
+
+    public function getTitre(): ?string
+    {
+        return $this->titre;
+    }
+
+    public function setTitre(?string $titre): static
+    {
+        $this->titre = $titre;
+
         return $this;
     }
 

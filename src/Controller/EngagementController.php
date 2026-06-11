@@ -37,6 +37,18 @@ final class EngagementController extends AbstractController
         return $this->success(array_map(fn (Engagement $e) => $this->serialize($e), $items));
     }
 
+    #[Route('/next-numero', name: 'api_engagements_next_numero', methods: ['GET'])]
+    public function nextNumero(Request $request, EngagementRepository $repository): JsonResponse
+    {
+        $year = $request->query->getInt('annee') ?: (int) date('Y');
+        $numero = $repository->generateNextNumero($year);
+
+        return $this->success([
+            'numero' => $numero,
+            'annee' => $year,
+        ]);
+    }
+
     #[Route('/{id}', name: 'api_engagements_show', methods: ['GET'])]
     public function show(int $id, EngagementRepository $repository): JsonResponse
     {
@@ -51,6 +63,7 @@ final class EngagementController extends AbstractController
     #[Route('', name: 'api_engagements_create', methods: ['POST'])]
     public function create(
         Request $request,
+        EngagementRepository $engagementRepository,
         LigneBudgetaireRepository $ligneRepository,
         PosteComptableRepository $posteRepository,
         FournisseurRepository $fournisseurRepository,
@@ -60,18 +73,25 @@ final class EngagementController extends AbstractController
         $data = $this->decodeJson($request);
         if (
             !$data
-            || empty($data['numero'])
+            || empty($data['titre'])
             || !isset($data['montant'])
             || empty($data['date'])
             || empty($data['statut'])
         ) {
-            return $this->error('Numéro, montant, date et statut sont obligatoires');
+            return $this->error('Titre, montant, date et statut sont obligatoires');
         }
 
+        $date = new \DateTime($data['date']);
+        $year = (int) $date->format('Y');
+        $numero = !empty($data['numero'])
+            ? trim((string) $data['numero'])
+            : $engagementRepository->generateNextNumero($year);
+
         $item = new Engagement();
-        $item->setNumero($data['numero']);
+        $item->setNumero($numero);
+        $item->setTitre(trim((string) $data['titre']));
         $item->setMontant((string) $data['montant']);
-        $item->setDate(new \DateTime($data['date']));
+        $item->setDate($date);
         $item->setStatut($data['statut']);
 
         if (!empty($data['ligne_budgetaire_id'])) {
@@ -128,6 +148,9 @@ final class EngagementController extends AbstractController
         $data = $this->decodeJson($request);
         if (isset($data['numero'])) {
             $item->setNumero($data['numero']);
+        }
+        if (isset($data['titre'])) {
+            $item->setTitre($data['titre']);
         }
         if (isset($data['montant'])) {
             $item->setMontant((string) $data['montant']);
@@ -215,6 +238,7 @@ final class EngagementController extends AbstractController
         return [
             'id' => $item->getId(),
             'numero' => $item->getNumero(),
+            'titre' => $item->getTitre(),
             'montant' => (float) $item->getMontant(),
             'date' => $item->getDate()?->format('Y-m-d'),
             'statut' => $item->getStatut(),
@@ -226,8 +250,8 @@ final class EngagementController extends AbstractController
             'fournisseur' => $fournisseur?->getNom(),
             'user_id' => $user?->getId(),
             'demandeur' => $user?->getNom(),
-            'objet' => $ligne?->getLibelle(),
-            'titre' => $ligne?->getLibelle(),
+            'objet' => $item->getTitre() ?? $ligne?->getLibelle(),
+            'titre' => $item->getTitre() ?? $ligne?->getLibelle(),
             'province_id' => $province?->getId(),
             'province_nom' => $province?->getNom(),
             'administration_id' => $administration?->getId(),

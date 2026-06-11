@@ -33,6 +33,10 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\JoinColumn(nullable: false)]
     private ?Role $role = null;
 
+    #[ORM\ManyToOne(inversedBy: 'users')]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?Province $province = null;
+
     /**
      * @var Collection<int, Engagement>
      */
@@ -126,6 +130,18 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setRole(?Role $role): static
     {
         $this->role = $role;
+        return $this;
+    }
+
+    public function getProvince(): ?Province
+    {
+        return $this->province;
+    }
+
+    public function setProvince(?Province $province): static
+    {
+        $this->province = $province;
+
         return $this;
     }
 

@@ -2,9 +2,7 @@
 
 namespace App\Controller;
 
-use App\Entity\User; 
 use App\Repository\UserRepository;
-use App\Repository\RoleRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
@@ -65,81 +63,65 @@ public function login(
             'id' => $user->getId(),
             'nom' => $user->getNom(),
             'matricule' => $user->getMatricule(),
-            'role' => $user->getRole()?->getNom()
+            'role' => $user->getRole()?->getNom(),
+            'province_id' => $user->getProvince()?->getId(),
+            'province_nom' => $user->getProvince()?->getNom(),
         ]
     ]);
 }
 
 
     // =========================
-    // CREATE USER
+    // FORGOT PASSWORD
     // =========================
-    #[Route('/api/users', name: 'api_create_user', methods: ['POST'])]
-    public function createUser(
+    #[Route('/api/forgot-password', name: 'api_forgot_password', methods: ['POST'])]
+    public function forgotPassword(
         Request $request,
+        UserRepository $userRepository,
+        UserPasswordHasherInterface $passwordHasher,
         EntityManagerInterface $em,
-        RoleRepository $roleRepository,
-        UserPasswordHasherInterface $passwordHasher
     ): JsonResponse {
-
         $data = json_decode($request->getContent(), true);
 
-        $nom = $data['nom'] ?? null;
-        $matricule = $data['matricule'] ?? null;
-        $password = $data['password'] ?? null;
-        $roleId = $data['role_id'] ?? null;
+        $matricule = trim($data['matricule'] ?? '');
+        $newPassword = $data['new_password'] ?? null;
 
-        if (!$nom || !$matricule || !$password || !$roleId) {
+        if (!$matricule || !$newPassword) {
             return $this->json([
                 'success' => false,
-                'message' => 'Tous les champs sont obligatoires'
+                'message' => 'Matricule et nouveau mot de passe requis',
             ], Response::HTTP_BAD_REQUEST);
         }
 
-        // Vérifier si matricule existe déjà
-        $existingUser = $em->getRepository(User::class)
-            ->findOneBy(['matricule' => $matricule]);
-
-        if ($existingUser) {
+        if (strlen($newPassword) < 6) {
             return $this->json([
                 'success' => false,
-                'message' => 'Ce matricule est déjà utilisé'
-            ], Response::HTTP_CONFLICT);
+                'message' => 'Le mot de passe doit contenir au moins 6 caractères',
+            ], Response::HTTP_BAD_REQUEST);
         }
 
-        // Récupération du rôle
-        $role = $roleRepository->find($roleId);
+        $user = $userRepository->findOneBy(['matricule' => $matricule]);
 
-        if (!$role) {
+        if (!$user) {
             return $this->json([
                 'success' => false,
-                'message' => 'Rôle introuvable'
+                'message' => 'Utilisateur introuvable',
             ], Response::HTTP_NOT_FOUND);
         }
 
-        // Création utilisateur
-        $user = new User();
-        $user->setNom($nom);
-        $user->setMatricule($matricule);
+        if ($passwordHasher->isPasswordValid($user, $newPassword)) {
+            return $this->json([
+                'success' => false,
+                'message' => 'Le nouveau mot de passe ne peut pas être identique à l\'ancien',
+            ], Response::HTTP_BAD_REQUEST);
+        }
 
-        //  HASH PASSWORD (IMPORTANT)
-        $hashedPassword = $passwordHasher->hashPassword($user, $password);
-        $user->setPassword($hashedPassword);
-
-        $user->setRole($role);
-
-        $em->persist($user);
+        $user->setPassword($passwordHasher->hashPassword($user, $newPassword));
         $em->flush();
 
         return $this->json([
             'success' => true,
-            'message' => 'Utilisateur créé avec succès',
-            'user' => [
-                'id' => $user->getId(),
-                'nom' => $user->getNom(),
-                'matricule' => $user->getMatricule(),
-                'role' => $role->getNom()
-            ]
-        ], Response::HTTP_CREATED);
+            'message' => 'Mot de passe mis à jour avec succès',
+        ]);
     }
 }
