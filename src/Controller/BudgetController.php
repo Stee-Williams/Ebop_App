@@ -13,7 +13,10 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use App\Security\Voter\PermissionVoter;
+use App\Util\BudgetMath;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/budgets')]
 final class BudgetController extends AbstractController
@@ -29,6 +32,7 @@ final class BudgetController extends AbstractController
     }
 
     #[Route('/consultation', name: 'api_budgets_consultation', methods: ['GET'])]
+    #[IsGranted(PermissionVoter::READ_BUDGET)]
     public function consultation(
         BudgetRepository $budgetRepository,
         LigneBudgetaireRepository $ligneBudgetaireRepository,
@@ -38,33 +42,46 @@ final class BudgetController extends AbstractController
 
         $budgetsData = array_map(fn (Budget $b) => $this->serialize($b), $budgets);
 
+        $totalBudgetGlobal = 0.0;
+        foreach ($budgets as $budget) {
+            $totalBudgetGlobal += (float) $budget->getMontant();
+        }
+
         $lignesData = [];
         $totalAlloue = 0.0;
-        $totalUtilise = 0.0;
+        $totalConsomme = 0.0;
 
         foreach ($lignes as $ligne) {
             $alloue = (float) $ligne->getMontantAlloue();
-            $utilise = (float) $ligne->getMontantUtilise();
+            $consomme = (float) $ligne->getMontantUtilise() + (float) $ligne->getMontantDecaisse();
             $budget = $ligne->getBudget();
 
             $totalAlloue += $alloue;
-            $totalUtilise += $utilise;
+            $totalConsomme += $consomme;
 
-            $province = $budget ? $this->getProvinceFromBudget($budget) : null;
+            $uo = $budget?->getUniteOperationnelle();
+            $administration = $uo?->getAdministration();
+            $province = $administration?->getProvince();
 
             $lignesData[] = [
                 'id' => $ligne->getId(),
                 'code' => $ligne->getCode(),
                 'libelle' => $ligne->getLibelle(),
                 'montant_alloue' => $alloue,
-                'montant_utilise' => $utilise,
-                'montant_disponible' => $alloue - $utilise,
-                'taux_utilisation' => $alloue > 0 ? round(($utilise / $alloue) * 100, 1) : 0,
+                'montant_utilise' => $consomme,
+                'montant_decaisse' => $consomme,
+                'montant_disponible' => max(0, $alloue - $consomme),
+                'taux_utilisation' => BudgetMath::tauxUtilisation($consomme, $alloue),
                 'budget_id' => $budget?->getId(),
                 'budget_libelle' => $budget?->getLibelle(),
                 'annee' => $budget?->getAnnee(),
                 'province_id' => $province?->getId(),
                 'province_nom' => $province?->getNom(),
+                'administration_id' => $administration?->getId(),
+                'administration_nom' => $administration?->getNom(),
+                'unite_operationnelle_id' => $uo?->getId(),
+                'unite_operationnelle_nom' => $uo?->getNom(),
+                'budget_montant' => $budget !== null ? (float) $budget->getMontant() : null,
             ];
         }
 
@@ -74,11 +91,11 @@ final class BudgetController extends AbstractController
             'lignes' => $lignesData,
             'stats' => [
                 'total_alloue' => $totalAlloue,
-                'total_utilise' => $totalUtilise,
-                'total_disponible' => $totalAlloue - $totalUtilise,
-                'taux_global' => $totalAlloue > 0
-                    ? round(($totalUtilise / $totalAlloue) * 100, 1)
-                    : 0,
+                'total_utilise' => $totalConsomme,
+                'total_disponible' => max(0, $totalAlloue - $totalConsomme),
+                'total_decaisse' => $totalConsomme,
+                'total_budget_global' => $totalBudgetGlobal,
+                'taux_global' => BudgetMath::tauxUtilisation($totalConsomme, $totalAlloue),
                 'nombre_lignes' => count($lignesData),
                 'nombre_budgets' => count($budgetsData),
             ],
@@ -191,7 +208,8 @@ final class BudgetController extends AbstractController
     private function serialize(Budget $budget, bool $detailed = false): array
     {
         $uo = $budget->getUniteOperationnelle();
-        $province = $this->getProvinceFromBudget($budget);
+        $administration = $uo?->getAdministration();
+        $province = $administration?->getProvince();
         $data = [
             'id' => $budget->getId(),
             'annee' => $budget->getAnnee(),
@@ -199,6 +217,8 @@ final class BudgetController extends AbstractController
             'montant' => (float) $budget->getMontant(),
             'unite_operationnelle_id' => $uo?->getId(),
             'unite_operationnelle' => $uo?->getNom(),
+            'administration_id' => $administration?->getId(),
+            'administration_nom' => $administration?->getNom(),
             'province_id' => $province?->getId(),
             'province_nom' => $province?->getNom(),
             'lignes_count' => $budget->getLigneBudgetaires()->count(),

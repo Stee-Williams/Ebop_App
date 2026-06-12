@@ -2,6 +2,8 @@
 
 namespace App\Controller;
 
+use App\Entity\ApiToken;
+use App\Repository\ApiTokenRepository;
 use App\Repository\UserRepository;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -20,7 +22,9 @@ final class AuthController extends AbstractController
 public function login(
     Request $request,
     UserRepository $userRepository,
-    UserPasswordHasherInterface $passwordHasher
+    UserPasswordHasherInterface $passwordHasher,
+    ApiTokenRepository $apiTokenRepository,
+    EntityManagerInterface $em,
 ): JsonResponse {
 
     $data = json_decode($request->getContent(), true);
@@ -53,12 +57,22 @@ public function login(
         ], Response::HTTP_UNAUTHORIZED);
     }
 
-    $token = bin2hex(random_bytes(32));
+    $tokenValue = bin2hex(random_bytes(32));
+
+    foreach ($apiTokenRepository->findBy(['user' => $user]) as $oldToken) {
+        $em->remove($oldToken);
+    }
+
+    $apiToken = new ApiToken();
+    $apiToken->setToken($tokenValue);
+    $apiToken->setUser($user);
+    $em->persist($apiToken);
+    $em->flush();
 
     return $this->json([
         'success' => true,
         'message' => 'Connexion réussie',
-        'token' => $token,
+        'token' => $tokenValue,
         'user' => [
             'id' => $user->getId(),
             'nom' => $user->getNom(),

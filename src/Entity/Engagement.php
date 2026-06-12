@@ -3,6 +3,8 @@
 namespace App\Entity;
 
 use App\Repository\EngagementRepository;
+use Doctrine\Common\Collections\ArrayCollection;
+use Doctrine\Common\Collections\Collection;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
@@ -42,7 +44,33 @@ class Engagement
     #[ORM\ManyToOne(inversedBy: 'engagements')]
     private ?User $users = null;
 
-    
+    #[ORM\ManyToOne]
+    #[ORM\JoinColumn(nullable: true)]
+    private ?User $visePar = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $dateVisa = null;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $motifRejet = null;
+
+    #[ORM\Column(options: ['default' => false])]
+    private bool $budgetEngage = false;
+
+    #[ORM\Column(options: ['default' => false])]
+    private bool $budgetDecaisse = false;
+
+    /**
+     * @var Collection<int, Reglement>
+     */
+    #[ORM\OneToMany(targetEntity: Reglement::class, mappedBy: 'engagement')]
+    private Collection $reglements;
+
+    public function __construct()
+    {
+        $this->reglements = new ArrayCollection();
+    }
+
     // GETTERS & SETTERS
     
 
@@ -151,6 +179,84 @@ class Engagement
     public function setUsers(?User $users): static
     {
         $this->users = $users;
+
+        return $this;
+    }
+
+    public function getVisePar(): ?User
+    {
+        return $this->visePar;
+    }
+
+    public function setVisePar(?User $visePar): static
+    {
+        $this->visePar = $visePar;
+
+        return $this;
+    }
+
+    public function getDateVisa(): ?\DateTimeImmutable
+    {
+        return $this->dateVisa;
+    }
+
+    public function setDateVisa(?\DateTimeImmutable $dateVisa): static
+    {
+        $this->dateVisa = $dateVisa;
+
+        return $this;
+    }
+
+    public function getMotifRejet(): ?string
+    {
+        return $this->motifRejet;
+    }
+
+    public function setMotifRejet(?string $motifRejet): static
+    {
+        $this->motifRejet = $motifRejet;
+
+        return $this;
+    }
+
+    public function isBudgetEngage(): bool
+    {
+        return $this->budgetEngage;
+    }
+
+    public function setBudgetEngage(bool $budgetEngage): static
+    {
+        $this->budgetEngage = $budgetEngage;
+
+        return $this;
+    }
+
+    public function isBudgetDecaisse(): bool
+    {
+        return $this->budgetDecaisse;
+    }
+
+    public function setBudgetDecaisse(bool $budgetDecaisse): static
+    {
+        $this->budgetDecaisse = $budgetDecaisse;
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, Reglement>
+     */
+    public function getReglements(): Collection
+    {
+        return $this->reglements;
+    }
+
+    public function addReglement(Reglement $reglement): static
+    {
+        if (!$this->reglements->contains($reglement)) {
+            $this->reglements->add($reglement);
+            $reglement->setEngagement($this);
+        }
 
         return $this;
     }

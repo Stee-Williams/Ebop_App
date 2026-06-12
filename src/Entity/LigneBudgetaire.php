@@ -28,6 +28,9 @@ class LigneBudgetaire
     #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2)]
     private ?string $montantUtilise = null;
 
+    #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 2, options: ['default' => '0'])]
+    private string $montantDecaisse = '0';
+
     #[ORM\ManyToOne(inversedBy: 'ligneBudgetaires')]
     private ?Budget $budget = null;
 
@@ -91,6 +94,18 @@ class LigneBudgetaire
     public function setMontantUtilise(string $montantUtilise): static
     {
         $this->montantUtilise = $montantUtilise;
+
+        return $this;
+    }
+
+    public function getMontantDecaisse(): string
+    {
+        return $this->montantDecaisse;
+    }
+
+    public function setMontantDecaisse(string $montantDecaisse): static
+    {
+        $this->montantDecaisse = $montantDecaisse;
 
         return $this;
     }

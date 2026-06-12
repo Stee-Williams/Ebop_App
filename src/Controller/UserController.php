@@ -13,8 +13,10 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Response;
+use App\Security\Voter\PermissionVoter;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/users')]
 final class UserController extends AbstractController
@@ -30,6 +32,7 @@ final class UserController extends AbstractController
     }
 
     #[Route('', name: 'api_users_create', methods: ['POST'])]
+    #[IsGranted(PermissionVoter::MANAGE_USERS)]
     public function create(
         Request $request,
         UserRepository $userRepository,
@@ -117,6 +120,7 @@ final class UserController extends AbstractController
     }
 
     #[Route('/{matricule}/role', name: 'api_update_user_role', methods: ['PATCH', 'PUT'])]
+    #[IsGranted(PermissionVoter::MANAGE_USERS)]
     public function updateRole(
         string $matricule,
         Request $request,
@@ -153,6 +157,7 @@ final class UserController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_users_update', methods: ['PUT', 'PATCH'])]
+    #[IsGranted(PermissionVoter::MANAGE_USERS)]
     public function update(
         int $id,
         Request $request,
@@ -201,6 +206,7 @@ final class UserController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_users_delete', methods: ['DELETE'])]
+    #[IsGranted(PermissionVoter::MANAGE_USERS)]
     public function delete(int $id, UserRepository $userRepository, EntityManagerInterface $em): JsonResponse
     {
         $user = $userRepository->find($id);

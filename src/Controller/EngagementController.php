@@ -4,17 +4,21 @@ namespace App\Controller;
 
 use App\Controller\Trait\ApiResponseTrait;
 use App\Entity\Engagement;
+use App\Entity\User;
 use App\Repository\EngagementRepository;
 use App\Repository\FournisseurRepository;
 use App\Repository\LigneBudgetaireRepository;
 use App\Repository\PosteComptableRepository;
 use App\Repository\UserRepository;
+use App\Security\Voter\PermissionVoter;
+use App\Service\EngagementWorkflowService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/engagements')]
 final class EngagementController extends AbstractController
@@ -22,6 +26,7 @@ final class EngagementController extends AbstractController
     use ApiResponseTrait;
 
     #[Route('', name: 'api_engagements_list', methods: ['GET'])]
+    #[IsGranted(PermissionVoter::READ_ENGAGEMENTS)]
     public function list(EngagementRepository $repository): JsonResponse
     {
         $items = $repository->findBy([], ['date' => 'DESC']);
@@ -30,6 +35,7 @@ final class EngagementController extends AbstractController
     }
 
     #[Route('/vises', name: 'api_engagements_vises', methods: ['GET'])]
+    #[IsGranted(PermissionVoter::READ_ENGAGEMENTS)]
     public function vises(EngagementRepository $repository): JsonResponse
     {
         $items = $repository->findBy(['statut' => 'Visé'], ['date' => 'DESC']);
@@ -38,6 +44,7 @@ final class EngagementController extends AbstractController
     }
 
     #[Route('/next-numero', name: 'api_engagements_next_numero', methods: ['GET'])]
+    #[IsGranted(PermissionVoter::MANAGE_ENGAGEMENTS)]
     public function nextNumero(Request $request, EngagementRepository $repository): JsonResponse
     {
         $year = $request->query->getInt('annee') ?: (int) date('Y');
@@ -50,6 +57,7 @@ final class EngagementController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_engagements_show', methods: ['GET'])]
+    #[IsGranted(PermissionVoter::READ_ENGAGEMENTS)]
     public function show(int $id, EngagementRepository $repository): JsonResponse
     {
         $item = $repository->find($id);
@@ -61,6 +69,7 @@ final class EngagementController extends AbstractController
     }
 
     #[Route('', name: 'api_engagements_create', methods: ['POST'])]
+    #[IsGranted(PermissionVoter::MANAGE_ENGAGEMENTS)]
     public function create(
         Request $request,
         EngagementRepository $engagementRepository,
@@ -68,6 +77,7 @@ final class EngagementController extends AbstractController
         PosteComptableRepository $posteRepository,
         FournisseurRepository $fournisseurRepository,
         UserRepository $userRepository,
+        EngagementWorkflowService $workflow,
         EntityManagerInterface $em,
     ): JsonResponse {
         $data = $this->decodeJson($request);
@@ -123,6 +133,12 @@ final class EngagementController extends AbstractController
             $item->setUsers($user);
         }
 
+        try {
+            $workflow->onCreate($item);
+        } catch (\DomainException $e) {
+            return $this->error($e->getMessage());
+        }
+
         $em->persist($item);
         $em->flush();
 
@@ -138,6 +154,7 @@ final class EngagementController extends AbstractController
         PosteComptableRepository $posteRepository,
         FournisseurRepository $fournisseurRepository,
         UserRepository $userRepository,
+        EngagementWorkflowService $workflow,
         EntityManagerInterface $em,
     ): JsonResponse {
         $item = $repository->find($id);
@@ -146,6 +163,29 @@ final class EngagementController extends AbstractController
         }
 
         $data = $this->decodeJson($request);
+
+        if (isset($data['statut'])) {
+            $newStatut = (string) $data['statut'];
+            if (in_array($newStatut, ['Visé', 'Rejeté'], true)) {
+                $this->denyAccessUnlessGranted(PermissionVoter::VISA_ENGAGEMENTS);
+            } else {
+                $this->denyAccessUnlessGranted(PermissionVoter::MANAGE_ENGAGEMENTS);
+            }
+
+            $actor = $this->getUser();
+            if (!$actor instanceof User) {
+                return $this->error('Utilisateur non authentifié', Response::HTTP_UNAUTHORIZED);
+            }
+
+            try {
+                $workflow->changeStatut($item, $newStatut, $actor, $data['motif_rejet'] ?? null);
+            } catch (\DomainException $e) {
+                return $this->error($e->getMessage());
+            }
+        } else {
+            $this->denyAccessUnlessGranted(PermissionVoter::MANAGE_ENGAGEMENTS);
+        }
+
         if (isset($data['numero'])) {
             $item->setNumero($data['numero']);
         }
@@ -158,9 +198,6 @@ final class EngagementController extends AbstractController
         if (isset($data['date'])) {
             $item->setDate(new \DateTime($data['date']));
         }
-        if (isset($data['statut'])) {
-            $item->setStatut($data['statut']);
-        }
         if (array_key_exists('ligne_budgetaire_id', $data)) {
             if ($data['ligne_budgetaire_id'] === null) {
                 $item->setLigneBudgetaire(null);
@@ -170,6 +207,11 @@ final class EngagementController extends AbstractController
                     return $this->error('Ligne budgétaire introuvable', Response::HTTP_NOT_FOUND);
                 }
                 $item->setLigneBudgetaire($ligne);
+                try {
+                    $workflow->ensureBudgetEngaged($item);
+                } catch (\DomainException $e) {
+                    return $this->error($e->getMessage());
+                }
             }
         }
         if (array_key_exists('poste_comptable_id', $data)) {
@@ -212,13 +254,19 @@ final class EngagementController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_engagements_delete', methods: ['DELETE'])]
-    public function delete(int $id, EngagementRepository $repository, EntityManagerInterface $em): JsonResponse
-    {
+    #[IsGranted(PermissionVoter::MANAGE_ENGAGEMENTS)]
+    public function delete(
+        int $id,
+        EngagementRepository $repository,
+        EngagementWorkflowService $workflow,
+        EntityManagerInterface $em,
+    ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Engagement introuvable', Response::HTTP_NOT_FOUND);
         }
 
+        $workflow->releaseBudget($item);
         $em->remove($item);
         $em->flush();
 
@@ -234,6 +282,7 @@ final class EngagementController extends AbstractController
         $province = $administration?->getProvince();
         $fournisseur = $item->getFournisseur();
         $user = $item->getUsers();
+        $visePar = $item->getVisePar();
 
         return [
             'id' => $item->getId(),
@@ -250,8 +299,11 @@ final class EngagementController extends AbstractController
             'fournisseur' => $fournisseur?->getNom(),
             'user_id' => $user?->getId(),
             'demandeur' => $user?->getNom(),
+            'vise_par' => $visePar?->getNom(),
+            'date_visa' => $item->getDateVisa()?->format('Y-m-d H:i:s'),
+            'motif_rejet' => $item->getMotifRejet(),
+            'budget_engage' => $item->isBudgetEngage(),
             'objet' => $item->getTitre() ?? $ligne?->getLibelle(),
-            'titre' => $item->getTitre() ?? $ligne?->getLibelle(),
             'province_id' => $province?->getId(),
             'province_nom' => $province?->getNom(),
             'administration_id' => $administration?->getId(),

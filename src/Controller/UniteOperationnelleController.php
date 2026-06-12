@@ -6,12 +6,14 @@ use App\Controller\Trait\ApiResponseTrait;
 use App\Entity\UniteOperationnelle;
 use App\Repository\AdministrationRepository;
 use App\Repository\UniteOperationnelleRepository;
+use App\Security\Voter\PermissionVoter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\Routing\Attribute\Route;
+use Symfony\Component\Security\Http\Attribute\IsGranted;
 
 #[Route('/api/unites-operationnelles')]
 final class UniteOperationnelleController extends AbstractController
@@ -38,6 +40,7 @@ final class UniteOperationnelleController extends AbstractController
     }
 
     #[Route('', name: 'api_unites_operationnelles_create', methods: ['POST'])]
+    #[IsGranted(PermissionVoter::MANAGE_ADMINISTRATIONS)]
     public function create(
         Request $request,
         AdministrationRepository $administrationRepository,
@@ -67,6 +70,7 @@ final class UniteOperationnelleController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_unites_operationnelles_update', methods: ['PUT', 'PATCH'])]
+    #[IsGranted(PermissionVoter::MANAGE_ADMINISTRATIONS)]
     public function update(
         int $id,
         Request $request,
@@ -104,6 +108,7 @@ final class UniteOperationnelleController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_unites_operationnelles_delete', methods: ['DELETE'])]
+    #[IsGranted(PermissionVoter::MANAGE_ADMINISTRATIONS)]
     public function delete(int $id, UniteOperationnelleRepository $repository, EntityManagerInterface $em): JsonResponse
     {
         $item = $repository->find($id);
