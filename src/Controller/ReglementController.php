@@ -58,6 +58,15 @@ final class ReglementController extends AbstractController
             return $this->error('Cet engagement possède déjà un règlement', Response::HTTP_CONFLICT);
         }
 
+        $modePaiement = trim((string) $data['mode_paiement']);
+        if (strcasecmp($modePaiement, 'Virement') === 0) {
+            $numeroCompte = trim((string) ($data['numero_compte'] ?? ''));
+            $banqueFournisseur = trim((string) ($data['banque_fournisseur'] ?? ''));
+            if ($numeroCompte === '' || $banqueFournisseur === '') {
+                return $this->error('Le numéro de compte et la banque du fournisseur sont obligatoires pour un virement');
+            }
+        }
+
         $date = new \DateTime($data['date_reglement']);
         $year = (int) $date->format('Y');
         $reference = !empty($data['reference'])
@@ -79,7 +88,17 @@ final class ReglementController extends AbstractController
         $reglement->setReference($reference);
         $reglement->setEngagement($engagement);
         $reglement->setMontant($engagement->getMontant());
-        $reglement->setModePaiement(trim((string) $data['mode_paiement']));
+        $reglement->setModePaiement($modePaiement);
+        $reglement->setNumeroCompte(
+            strcasecmp($modePaiement, 'Virement') === 0
+                ? trim((string) $data['numero_compte'])
+                : null
+        );
+        $reglement->setBanqueFournisseur(
+            strcasecmp($modePaiement, 'Virement') === 0
+                ? trim((string) $data['banque_fournisseur'])
+                : null
+        );
         $reglement->setDateReglement($date);
         $reglement->setCreePar($user);
 
@@ -104,13 +123,16 @@ final class ReglementController extends AbstractController
         $administration = $uo?->getAdministration();
         $province = $administration?->getProvince();
         $fournisseur = $engagement?->getFournisseur();
-        $demandeur = $engagement?->getUsers();
+        $saisiPar = $engagement?->getUsers();
+        $visePar = $engagement?->getVisePar();
 
         return [
             'id' => $item->getId(),
             'reference' => $item->getReference(),
             'montant' => (float) $item->getMontant(),
             'mode_paiement' => $item->getModePaiement(),
+            'numero_compte' => $item->getNumeroCompte(),
+            'banque_fournisseur' => $item->getBanqueFournisseur(),
             'date_reglement' => $item->getDateReglement()?->format('Y-m-d'),
             'created_at' => $item->getCreatedAt()?->format('Y-m-d H:i:s'),
             'cree_par' => $item->getCreePar()?->getNom(),
@@ -119,8 +141,9 @@ final class ReglementController extends AbstractController
             'engagement_titre' => $engagement?->getTitre(),
             'engagement_statut' => $engagement?->getStatut(),
             'fournisseur' => $fournisseur?->getNom(),
-            'demandeur' => $demandeur?->getNom(),
-            'user_id' => $demandeur?->getId(),
+            'demandeur' => $visePar?->getNom(),
+            'saisi_par' => $saisiPar?->getNom(),
+            'user_id' => $visePar?->getId() ?? $saisiPar?->getId(),
             'province_id' => $province?->getId(),
             'province_nom' => $province?->getNom(),
             'administration_id' => $administration?->getId(),

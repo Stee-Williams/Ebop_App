@@ -2,8 +2,10 @@
 
 namespace App\Command;
 
+use App\Data\GabonPostesComptablesSeedData;
 use App\Entity\Administration;
 use App\Entity\Fournisseur;
+use App\Entity\PosteComptable;
 use App\Repository\ProvinceRepository;
 use App\Service\AdministrationSetupService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -16,7 +18,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 #[AsCommand(
     name: 'app:seed-gabon-referentiels',
-    description: 'Vide et recharge fournisseurs, administrations, UO et lignes budgétaires (4 par province)',
+    description: 'Vide et recharge fournisseurs, administrations, postes comptables, UO et lignes budgétaires',
 )]
 final class SeedGabonReferentielsCommand extends Command
 {
@@ -73,7 +75,7 @@ final class SeedGabonReferentielsCommand extends Command
 
         if (!$input->getOption('force')) {
             $io->warning(
-                'Cette commande supprime engagements, règlements, lignes, budgets, UO, administrations et fournisseurs.'
+                'Cette commande supprime engagements, règlements, lignes, budgets, UO, administrations, postes comptables et fournisseurs.'
             );
             $io->text('Relancez avec --force pour exécuter.');
 
@@ -87,9 +89,10 @@ final class SeedGabonReferentielsCommand extends Command
         $conn->executeStatement('DELETE FROM budget');
         $conn->executeStatement('DELETE FROM unite_operationnelle');
         $conn->executeStatement('DELETE FROM administration');
+        $conn->executeStatement('DELETE FROM poste_comptable');
         $conn->executeStatement('DELETE FROM fournisseur');
 
-        foreach (['reglement', 'engagement', 'ligne_budgetaire', 'budget', 'unite_operationnelle', 'administration', 'fournisseur'] as $table) {
+        foreach (['reglement', 'engagement', 'ligne_budgetaire', 'budget', 'unite_operationnelle', 'administration', 'poste_comptable', 'fournisseur'] as $table) {
             $conn->executeStatement(
                 "SELECT setval(pg_get_serial_sequence('{$table}', 'id'), 1, false)"
             );
@@ -108,6 +111,7 @@ final class SeedGabonReferentielsCommand extends Command
         $adminCount = 0;
         $uoCount = 0;
         $ligneCount = 0;
+        $posteCount = 0;
 
         foreach ($provinces as $index => $province) {
             $provinceNom = $province->getNom() ?? 'Province';
@@ -135,6 +139,17 @@ final class SeedGabonReferentielsCommand extends Command
                 ++$uoCount;
                 $ligneCount += count(self::LIGNE_TEMPLATES);
             }
+
+            foreach ($this->resolvePostesForProvince($provinceNom) as $posteTpl) {
+                $poste = new PosteComptable();
+                $poste->setCode($posteTpl['code']);
+                $poste->setLibelle($posteTpl['libelle']);
+                $poste->setDescription($posteTpl['description']);
+                $poste->setType($posteTpl['type']);
+                $poste->setProvince($province);
+                $this->em->persist($poste);
+                ++$posteCount;
+            }
         }
 
         $this->em->flush();
@@ -147,6 +162,7 @@ final class SeedGabonReferentielsCommand extends Command
                 ['Administrations (4 / province)', (string) $adminCount],
                 ['Unités opérationnelles (4 / province)', (string) $uoCount],
                 ['Lignes budgétaires (4 / UO)', (string) $ligneCount],
+                ['Postes comptables (réseau DGCPT)', (string) $posteCount],
                 ['Fournisseurs', (string) count(self::FOURNISSEURS)],
             ]
         );
@@ -184,5 +200,31 @@ final class SeedGabonReferentielsCommand extends Command
         }
 
         return $lignes;
+    }
+
+    /**
+     * @return list<array{code: string, libelle: string, description: string, type: string}>
+     */
+    private function resolvePostesForProvince(string $provinceNom): array
+    {
+        $byKey = GabonPostesComptablesSeedData::byProvinceKey();
+        $key = GabonPostesComptablesSeedData::provinceKeyFromNom($provinceNom);
+
+        if (isset($byKey[$key])) {
+            return $byKey[$key];
+        }
+
+        $stripped = preg_replace('/^(la|le|l|du|de|des)-/', '', $key) ?? $key;
+        if ($stripped !== $key && isset($byKey[$stripped])) {
+            return $byKey[$stripped];
+        }
+
+        foreach ($byKey as $knownKey => $postes) {
+            if (str_contains($key, $knownKey) || str_contains($knownKey, $stripped)) {
+                return $postes;
+            }
+        }
+
+        return [];
     }
 }

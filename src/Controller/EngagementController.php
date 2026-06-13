@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Controller\Trait\ApiResponseTrait;
 use App\Entity\Engagement;
+use App\Entity\Fournisseur;
 use App\Entity\User;
 use App\Repository\EngagementRepository;
 use App\Repository\FournisseurRepository;
@@ -111,19 +112,38 @@ final class EngagementController extends AbstractController
             }
             $item->setLigneBudgetaire($ligne);
         }
-        if (!empty($data['poste_comptable_id'])) {
-            $poste = $posteRepository->find($data['poste_comptable_id']);
-            if (!$poste) {
-                return $this->error('Poste comptable introuvable', Response::HTTP_NOT_FOUND);
-            }
-            $item->setPosteComptable($poste);
+        if (empty($data['poste_comptable_id'])) {
+            return $this->error('Le poste comptable est obligatoire');
         }
+        $poste = $posteRepository->find($data['poste_comptable_id']);
+        if (!$poste) {
+            return $this->error('Poste comptable introuvable', Response::HTTP_NOT_FOUND);
+        }
+        $item->setPosteComptable($poste);
         if (!empty($data['fournisseur_id'])) {
             $fournisseur = $fournisseurRepository->find($data['fournisseur_id']);
             if (!$fournisseur) {
                 return $this->error('Fournisseur introuvable', Response::HTTP_NOT_FOUND);
             }
             $item->setFournisseur($fournisseur);
+        } elseif (!empty($data['fournisseur_nom'])) {
+            $nom = trim((string) $data['fournisseur_nom']);
+            if ($nom !== '') {
+                $fournisseur = $fournisseurRepository->createQueryBuilder('f')
+                    ->where('LOWER(f.nom) = LOWER(:nom)')
+                    ->setParameter('nom', $nom)
+                    ->setMaxResults(1)
+                    ->getQuery()
+                    ->getOneOrNullResult();
+
+                if (!$fournisseur) {
+                    $fournisseur = new Fournisseur();
+                    $fournisseur->setNom($nom);
+                    $em->persist($fournisseur);
+                }
+
+                $item->setFournisseur($fournisseur);
+            }
         }
         if (!empty($data['user_id'])) {
             $user = $userRepository->find($data['user_id']);
@@ -297,8 +317,9 @@ final class EngagementController extends AbstractController
             'poste_comptable_libelle' => $item->getPosteComptable()?->getLibelle(),
             'fournisseur_id' => $fournisseur?->getId(),
             'fournisseur' => $fournisseur?->getNom(),
-            'user_id' => $user?->getId(),
-            'demandeur' => $user?->getNom(),
+            'user_id' => $visePar?->getId() ?? $user?->getId(),
+            'demandeur' => $visePar?->getNom(),
+            'saisi_par' => $user?->getNom(),
             'vise_par' => $visePar?->getNom(),
             'date_visa' => $item->getDateVisa()?->format('Y-m-d H:i:s'),
             'motif_rejet' => $item->getMotifRejet(),

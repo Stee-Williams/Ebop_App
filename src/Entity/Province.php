@@ -33,10 +33,17 @@ class Province
     #[ORM\OneToMany(targetEntity: User::class, mappedBy: 'province')]
     private Collection $users;
 
+    /**
+     * @var Collection<int, PosteComptable>
+     */
+    #[ORM\OneToMany(targetEntity: PosteComptable::class, mappedBy: 'province')]
+    private Collection $postesComptables;
+
     public function __construct()
     {
         $this->administrations = new ArrayCollection();
         $this->users = new ArrayCollection();
+        $this->postesComptables = new ArrayCollection();
     }
 
     // ======================
@@ -123,6 +130,35 @@ class Province
         if ($this->users->removeElement($user)) {
             if ($user->getProvince() === $this) {
                 $user->setProvince(null);
+            }
+        }
+
+        return $this;
+    }
+
+    /**
+     * @return Collection<int, PosteComptable>
+     */
+    public function getPostesComptables(): Collection
+    {
+        return $this->postesComptables;
+    }
+
+    public function addPosteComptable(PosteComptable $posteComptable): static
+    {
+        if (!$this->postesComptables->contains($posteComptable)) {
+            $this->postesComptables->add($posteComptable);
+            $posteComptable->setProvince($this);
+        }
+
+        return $this;
+    }
+
+    public function removePosteComptable(PosteComptable $posteComptable): static
+    {
+        if ($this->postesComptables->removeElement($posteComptable)) {
+            if ($posteComptable->getProvince() === $this) {
+                $posteComptable->setProvince(null);
             }
         }
 

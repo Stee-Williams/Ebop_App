@@ -27,6 +27,12 @@ class Reglement
     #[ORM\Column(length: 50)]
     private ?string $modePaiement = null;
 
+    #[ORM\Column(length: 50, nullable: true)]
+    private ?string $numeroCompte = null;
+
+    #[ORM\Column(length: 150, nullable: true)]
+    private ?string $banqueFournisseur = null;
+
     #[ORM\Column(type: Types::DATE_MUTABLE)]
     private ?\DateTimeInterface $dateReglement = null;
 
@@ -91,6 +97,30 @@ class Reglement
     public function setModePaiement(string $modePaiement): static
     {
         $this->modePaiement = $modePaiement;
+
+        return $this;
+    }
+
+    public function getNumeroCompte(): ?string
+    {
+        return $this->numeroCompte;
+    }
+
+    public function setNumeroCompte(?string $numeroCompte): static
+    {
+        $this->numeroCompte = $numeroCompte;
+
+        return $this;
+    }
+
+    public function getBanqueFournisseur(): ?string
+    {
+        return $this->banqueFournisseur;
+    }
+
+    public function setBanqueFournisseur(?string $banqueFournisseur): static
+    {
+        $this->banqueFournisseur = $banqueFournisseur;
 
         return $this;
     }

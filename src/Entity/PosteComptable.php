@@ -25,6 +25,12 @@ class PosteComptable
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $description = null;
 
+    #[ORM\Column(length: 40, nullable: true)]
+    private ?string $type = null;
+
+    #[ORM\ManyToOne(inversedBy: 'postesComptables')]
+    private ?Province $province = null;
+
     /**
      * @var Collection<int, Engagement>
      */
@@ -73,6 +79,30 @@ class PosteComptable
     public function setDescription(?string $description): static
     {
         $this->description = $description;
+
+        return $this;
+    }
+
+    public function getType(): ?string
+    {
+        return $this->type;
+    }
+
+    public function setType(?string $type): static
+    {
+        $this->type = $type;
+
+        return $this;
+    }
+
+    public function getProvince(): ?Province
+    {
+        return $this->province;
+    }
+
+    public function setProvince(?Province $province): static
+    {
+        $this->province = $province;
 
         return $this;
     }
