@@ -11,6 +11,7 @@ use App\Repository\FournisseurRepository;
 use App\Repository\LigneBudgetaireRepository;
 use App\Repository\PosteComptableRepository;
 use App\Repository\UserRepository;
+use App\Security\ProvinceScopeService;
 use App\Security\Voter\PermissionVoter;
 use App\Service\EngagementWorkflowService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -28,18 +29,26 @@ final class EngagementController extends AbstractController
 
     #[Route('', name: 'api_engagements_list', methods: ['GET'])]
     #[IsGranted(PermissionVoter::READ_ENGAGEMENTS)]
-    public function list(EngagementRepository $repository): JsonResponse
+    public function list(EngagementRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $items = $repository->findBy([], ['date' => 'DESC']);
+        $items = $provinceScope->filterByProvince(
+            $items,
+            fn (Engagement $e) => $provinceScope->getProvinceIdFromEngagement($e)
+        );
 
         return $this->success(array_map(fn (Engagement $e) => $this->serialize($e), $items));
     }
 
     #[Route('/vises', name: 'api_engagements_vises', methods: ['GET'])]
     #[IsGranted(PermissionVoter::READ_ENGAGEMENTS)]
-    public function vises(EngagementRepository $repository): JsonResponse
+    public function vises(EngagementRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $items = $repository->findBy(['statut' => 'Visé'], ['date' => 'DESC']);
+        $items = $provinceScope->filterByProvince(
+            $items,
+            fn (Engagement $e) => $provinceScope->getProvinceIdFromEngagement($e)
+        );
 
         return $this->success(array_map(fn (Engagement $e) => $this->serialize($e), $items));
     }
@@ -59,12 +68,14 @@ final class EngagementController extends AbstractController
 
     #[Route('/{id}', name: 'api_engagements_show', methods: ['GET'])]
     #[IsGranted(PermissionVoter::READ_ENGAGEMENTS)]
-    public function show(int $id, EngagementRepository $repository): JsonResponse
+    public function show(int $id, EngagementRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Engagement introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessEngagement($item);
 
         return $this->success($this->serialize($item));
     }
@@ -80,6 +91,7 @@ final class EngagementController extends AbstractController
         UserRepository $userRepository,
         EngagementWorkflowService $workflow,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         if (
@@ -110,6 +122,7 @@ final class EngagementController extends AbstractController
             if (!$ligne) {
                 return $this->error('Ligne budgétaire introuvable', Response::HTTP_NOT_FOUND);
             }
+            $provinceScope->assertCanAccessLigne($ligne);
             $item->setLigneBudgetaire($ligne);
         }
         if (empty($data['poste_comptable_id'])) {
@@ -119,6 +132,7 @@ final class EngagementController extends AbstractController
         if (!$poste) {
             return $this->error('Poste comptable introuvable', Response::HTTP_NOT_FOUND);
         }
+        $provinceScope->assertCanAccessPoste($poste);
         $item->setPosteComptable($poste);
         if (!empty($data['fournisseur_id'])) {
             $fournisseur = $fournisseurRepository->find($data['fournisseur_id']);
@@ -176,11 +190,14 @@ final class EngagementController extends AbstractController
         UserRepository $userRepository,
         EngagementWorkflowService $workflow,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Engagement introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessEngagement($item);
 
         $data = $this->decodeJson($request);
 
@@ -226,6 +243,7 @@ final class EngagementController extends AbstractController
                 if (!$ligne) {
                     return $this->error('Ligne budgétaire introuvable', Response::HTTP_NOT_FOUND);
                 }
+                $provinceScope->assertCanAccessLigne($ligne);
                 $item->setLigneBudgetaire($ligne);
                 try {
                     $workflow->ensureBudgetEngaged($item);
@@ -242,6 +260,7 @@ final class EngagementController extends AbstractController
                 if (!$poste) {
                     return $this->error('Poste comptable introuvable', Response::HTTP_NOT_FOUND);
                 }
+                $provinceScope->assertCanAccessPoste($poste);
                 $item->setPosteComptable($poste);
             }
         }
@@ -280,11 +299,14 @@ final class EngagementController extends AbstractController
         EngagementRepository $repository,
         EngagementWorkflowService $workflow,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Engagement introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessEngagement($item);
 
         $workflow->releaseBudget($item);
         $em->remove($item);

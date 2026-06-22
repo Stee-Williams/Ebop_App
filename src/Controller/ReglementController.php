@@ -7,6 +7,7 @@ use App\Entity\Reglement;
 use App\Entity\User;
 use App\Repository\EngagementRepository;
 use App\Repository\ReglementRepository;
+use App\Security\ProvinceScopeService;
 use App\Security\Voter\PermissionVoter;
 use App\Service\EngagementWorkflowService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -24,9 +25,13 @@ final class ReglementController extends AbstractController
 
     #[Route('', name: 'api_reglements_list', methods: ['GET'])]
     #[IsGranted(PermissionVoter::MANAGE_REGLEMENTS)]
-    public function list(ReglementRepository $repository): JsonResponse
+    public function list(ReglementRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $items = $repository->findBy([], ['dateReglement' => 'DESC', 'id' => 'DESC']);
+        $items = $provinceScope->filterByProvince(
+            $items,
+            fn (Reglement $r) => $provinceScope->getProvinceIdFromEngagement($r->getEngagement())
+        );
 
         return $this->success(array_map(fn (Reglement $r) => $this->serialize($r), $items));
     }
@@ -39,6 +44,7 @@ final class ReglementController extends AbstractController
         ReglementRepository $reglementRepository,
         EngagementWorkflowService $workflow,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         if (!$data || empty($data['engagement_id']) || empty($data['mode_paiement']) || empty($data['date_reglement'])) {
@@ -49,6 +55,8 @@ final class ReglementController extends AbstractController
         if (!$engagement) {
             return $this->error('Engagement introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessEngagement($engagement);
 
         if ($engagement->getStatut() !== 'Visé') {
             return $this->error('Seuls les engagements visés peuvent être réglés');

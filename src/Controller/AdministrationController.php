@@ -9,6 +9,7 @@ use App\Entity\LigneBudgetaire;
 use App\Entity\UniteOperationnelle;
 use App\Repository\AdministrationRepository;
 use App\Repository\ProvinceRepository;
+use App\Security\ProvinceScopeService;
 use App\Security\Voter\PermissionVoter;
 use App\Service\AdministrationSetupService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -25,20 +26,26 @@ final class AdministrationController extends AbstractController
     use ApiResponseTrait;
 
     #[Route('', name: 'api_administrations_list', methods: ['GET'])]
-    public function list(AdministrationRepository $repository): JsonResponse
+    public function list(AdministrationRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $items = $repository->findBy([], ['nom' => 'ASC']);
+        $items = $provinceScope->filterByProvince(
+            $items,
+            fn (Administration $a) => $provinceScope->getProvinceIdFromAdministration($a)
+        );
 
         return $this->success(array_map(fn (Administration $a) => $this->serialize($a), $items));
     }
 
     #[Route('/{id}', name: 'api_administrations_show', methods: ['GET'])]
-    public function show(int $id, AdministrationRepository $repository): JsonResponse
+    public function show(int $id, AdministrationRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Administration introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessAdministration($item);
 
         return $this->success($this->serialize($item, true));
     }
@@ -50,6 +57,7 @@ final class AdministrationController extends AbstractController
         ProvinceRepository $provinceRepository,
         AdministrationSetupService $setupService,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         if (!$data || empty($data['nom']) || empty($data['code'])) {
@@ -60,8 +68,14 @@ final class AdministrationController extends AbstractController
         $item->setNom($data['nom']);
         $item->setCode($data['code']);
 
-        if (!empty($data['province_id'])) {
-            $province = $provinceRepository->find($data['province_id']);
+        if (!empty($data['province_id']) || $provinceScope->getRestrictedProvinceId() !== null) {
+            $provinceId = $provinceScope->resolveProvinceIdForCreate(
+                !empty($data['province_id']) ? (int) $data['province_id'] : null
+            );
+            if ($provinceId === null) {
+                return $this->error('La province est obligatoire');
+            }
+            $province = $provinceRepository->find($provinceId);
             if (!$province) {
                 return $this->error('Province introuvable', Response::HTTP_NOT_FOUND);
             }
@@ -92,11 +106,14 @@ final class AdministrationController extends AbstractController
         ProvinceRepository $provinceRepository,
         AdministrationSetupService $setupService,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Administration introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessAdministration($item);
 
         $data = $this->decodeJson($request);
         if (isset($data['nom'])) {
@@ -106,10 +123,13 @@ final class AdministrationController extends AbstractController
             $item->setCode($data['code']);
         }
         if (array_key_exists('province_id', $data)) {
-            if ($data['province_id'] === null) {
+            $provinceId = $provinceScope->resolveProvinceIdForCreate(
+                $data['province_id'] === null ? null : (int) $data['province_id']
+            );
+            if ($provinceId === null) {
                 $item->setProvince(null);
             } else {
-                $province = $provinceRepository->find($data['province_id']);
+                $province = $provinceRepository->find($provinceId);
                 if (!$province) {
                     return $this->error('Province introuvable', Response::HTTP_NOT_FOUND);
                 }
@@ -132,12 +152,14 @@ final class AdministrationController extends AbstractController
 
     #[Route('/{id}', name: 'api_administrations_delete', methods: ['DELETE'])]
     #[IsGranted(PermissionVoter::MANAGE_ADMINISTRATIONS)]
-    public function delete(int $id, AdministrationRepository $repository, EntityManagerInterface $em): JsonResponse
+    public function delete(int $id, AdministrationRepository $repository, EntityManagerInterface $em, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Administration introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessAdministration($item);
 
         $em->remove($item);
         $em->flush();

@@ -7,6 +7,7 @@ use App\Entity\User;
 use App\Repository\ProvinceRepository;
 use App\Repository\UserRepository;
 use App\Repository\RoleRepository;
+use App\Security\ProvinceScopeService;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -24,9 +25,13 @@ final class UserController extends AbstractController
     use ApiResponseTrait;
 
     #[Route('', name: 'api_users_list', methods: ['GET'])]
-    public function list(UserRepository $userRepository): JsonResponse
+    public function list(UserRepository $userRepository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $users = $userRepository->findBy([], ['nom' => 'ASC']);
+        $users = $provinceScope->filterByProvince(
+            $users,
+            fn (User $u) => $provinceScope->getProvinceIdFromUser($u)
+        );
 
         return $this->success(array_map(fn (User $u) => $this->serialize($u), $users));
     }
@@ -40,6 +45,7 @@ final class UserController extends AbstractController
         ProvinceRepository $provinceRepository,
         UserPasswordHasherInterface $passwordHasher,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
 
@@ -60,6 +66,13 @@ final class UserController extends AbstractController
         $role = $roleRepository->find($roleId);
         if (!$role) {
             return $this->error('Rôle introuvable', Response::HTTP_NOT_FOUND);
+        }
+
+        $provinceId = $provinceScope->resolveProvinceIdForCreate(
+            $provinceId !== null ? (int) $provinceId : null
+        );
+        if ($provinceId === null) {
+            return $this->error('La province est obligatoire');
         }
 
         $province = $provinceRepository->find($provinceId);
@@ -97,7 +110,8 @@ final class UserController extends AbstractController
     #[Route('/matricule/{matricule}', name: 'api_get_user_by_matricule', methods: ['GET'])]
     public function getByMatricule(
         string $matricule,
-        UserRepository $userRepository
+        UserRepository $userRepository,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $user = $userRepository->findOneBy(['matricule' => $matricule]);
 
@@ -105,16 +119,20 @@ final class UserController extends AbstractController
             return $this->error('Aucun utilisateur trouvé', Response::HTTP_NOT_FOUND);
         }
 
+        $provinceScope->assertCanAccessUser($user);
+
         return $this->success(['user' => $this->serialize($user)]);
     }
 
     #[Route('/{id}', name: 'api_users_show', methods: ['GET'])]
-    public function show(int $id, UserRepository $userRepository): JsonResponse
+    public function show(int $id, UserRepository $userRepository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $user = $userRepository->find($id);
         if (!$user) {
             return $this->error('Utilisateur introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessUser($user);
 
         return $this->success($this->serialize($user));
     }
@@ -126,7 +144,8 @@ final class UserController extends AbstractController
         Request $request,
         UserRepository $userRepository,
         RoleRepository $roleRepository,
-        EntityManagerInterface $em
+        EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         $roleId = $data['role_id'] ?? null;
@@ -140,6 +159,8 @@ final class UserController extends AbstractController
         if (!$user) {
             return $this->error('Utilisateur introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessUser($user);
 
         $role = $roleRepository->find($roleId);
 
@@ -165,11 +186,14 @@ final class UserController extends AbstractController
         RoleRepository $roleRepository,
         ProvinceRepository $provinceRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $user = $userRepository->find($id);
         if (!$user) {
             return $this->error('Utilisateur introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessUser($user);
 
         $data = $this->decodeJson($request);
 
@@ -186,10 +210,13 @@ final class UserController extends AbstractController
         }
 
         if (array_key_exists('province_id', $data)) {
-            if ($data['province_id'] === null) {
+            $provinceId = $provinceScope->resolveProvinceIdForCreate(
+                $data['province_id'] === null ? null : (int) $data['province_id']
+            );
+            if ($provinceId === null) {
                 $user->setProvince(null);
             } else {
-                $province = $provinceRepository->find($data['province_id']);
+                $province = $provinceRepository->find($provinceId);
                 if (!$province) {
                     return $this->error('Province introuvable', Response::HTTP_NOT_FOUND);
                 }
@@ -207,12 +234,14 @@ final class UserController extends AbstractController
 
     #[Route('/{id}', name: 'api_users_delete', methods: ['DELETE'])]
     #[IsGranted(PermissionVoter::MANAGE_USERS)]
-    public function delete(int $id, UserRepository $userRepository, EntityManagerInterface $em): JsonResponse
+    public function delete(int $id, UserRepository $userRepository, EntityManagerInterface $em, ProvinceScopeService $provinceScope): JsonResponse
     {
         $user = $userRepository->find($id);
         if (!$user) {
             return $this->error('Utilisateur introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessUser($user);
 
         $em->remove($user);
         $em->flush();

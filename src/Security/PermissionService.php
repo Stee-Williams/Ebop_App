@@ -48,6 +48,20 @@ final class PermissionService
         return $this->normalizeRole($user->getRole()?->getNom()) === 'super_admin';
     }
 
+    /** Accès national : super admin, trésorier, CB principal, DBA, informaticien. */
+    public function canAccessAllProvinces(User $user): bool
+    {
+        if ($this->isSuperAdmin($user)) {
+            return true;
+        }
+
+        return in_array(
+            $this->normalizeRole($user->getRole()?->getNom()),
+            ['tresorier', 'controleur_budgetaire_principal', 'dba', 'informaticien'],
+            true
+        );
+    }
+
     public function canManageUsers(User $user): bool
     {
         if ($this->isSuperAdmin($user)) {

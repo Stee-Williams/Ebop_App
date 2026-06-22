@@ -8,6 +8,7 @@ use App\Entity\Province;
 use App\Repository\BudgetRepository;
 use App\Repository\LigneBudgetaireRepository;
 use App\Repository\UniteOperationnelleRepository;
+use App\Security\ProvinceScopeService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -24,9 +25,13 @@ final class BudgetController extends AbstractController
     use ApiResponseTrait;
 
     #[Route('', name: 'api_budgets_list', methods: ['GET'])]
-    public function list(BudgetRepository $budgetRepository): JsonResponse
+    public function list(BudgetRepository $budgetRepository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $budgets = $budgetRepository->findBy([], ['annee' => 'DESC', 'id' => 'ASC']);
+        $budgets = $provinceScope->filterByProvince(
+            $budgets,
+            fn (Budget $b) => $provinceScope->getProvinceIdFromBudget($b)
+        );
 
         return $this->success(array_map(fn (Budget $b) => $this->serialize($b), $budgets));
     }
@@ -36,9 +41,19 @@ final class BudgetController extends AbstractController
     public function consultation(
         BudgetRepository $budgetRepository,
         LigneBudgetaireRepository $ligneBudgetaireRepository,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $budgets = $budgetRepository->findBy([], ['annee' => 'DESC', 'id' => 'ASC']);
         $lignes = $ligneBudgetaireRepository->findBy([], ['code' => 'ASC', 'id' => 'ASC']);
+
+        $budgets = $provinceScope->filterByProvince(
+            $budgets,
+            fn (Budget $b) => $provinceScope->getProvinceIdFromBudget($b)
+        );
+        $lignes = $provinceScope->filterByProvince(
+            $lignes,
+            fn ($ligne) => $provinceScope->getProvinceIdFromLigne($ligne)
+        );
 
         $budgetsData = array_map(fn (Budget $b) => $this->serialize($b), $budgets);
 
@@ -103,12 +118,14 @@ final class BudgetController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_budgets_show', methods: ['GET'])]
-    public function show(int $id, BudgetRepository $budgetRepository): JsonResponse
+    public function show(int $id, BudgetRepository $budgetRepository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $budget = $budgetRepository->find($id);
         if (!$budget) {
             return $this->error('Budget introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessBudget($budget);
 
         return $this->success($this->serialize($budget, true));
     }
@@ -118,6 +135,7 @@ final class BudgetController extends AbstractController
         Request $request,
         UniteOperationnelleRepository $uoRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         if (!$data || empty($data['annee']) || empty($data['libelle']) || !isset($data['montant'])) {
@@ -134,6 +152,7 @@ final class BudgetController extends AbstractController
             if (!$uo) {
                 return $this->error('Unité opérationnelle introuvable', Response::HTTP_NOT_FOUND);
             }
+            $provinceScope->assertCanAccessUnite($uo);
             $budget->setUniteOperationnelle($uo);
         }
 
@@ -150,11 +169,14 @@ final class BudgetController extends AbstractController
         BudgetRepository $budgetRepository,
         UniteOperationnelleRepository $uoRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $budget = $budgetRepository->find($id);
         if (!$budget) {
             return $this->error('Budget introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessBudget($budget);
 
         $data = $this->decodeJson($request);
         if (isset($data['annee'])) {
@@ -174,6 +196,7 @@ final class BudgetController extends AbstractController
                 if (!$uo) {
                     return $this->error('Unité opérationnelle introuvable', Response::HTTP_NOT_FOUND);
                 }
+                $provinceScope->assertCanAccessUnite($uo);
                 $budget->setUniteOperationnelle($uo);
             }
         }
@@ -184,12 +207,14 @@ final class BudgetController extends AbstractController
     }
 
     #[Route('/{id}', name: 'api_budgets_delete', methods: ['DELETE'])]
-    public function delete(int $id, BudgetRepository $budgetRepository, EntityManagerInterface $em): JsonResponse
+    public function delete(int $id, BudgetRepository $budgetRepository, EntityManagerInterface $em, ProvinceScopeService $provinceScope): JsonResponse
     {
         $budget = $budgetRepository->find($id);
         if (!$budget) {
             return $this->error('Budget introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessBudget($budget);
 
         $em->remove($budget);
         $em->flush();

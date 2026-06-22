@@ -6,6 +6,7 @@ use App\Controller\Trait\ApiResponseTrait;
 use App\Entity\LigneBudgetaire;
 use App\Repository\BudgetRepository;
 use App\Repository\LigneBudgetaireRepository;
+use App\Security\ProvinceScopeService;
 use App\Security\Voter\PermissionVoter;
 use App\Service\EngagementWorkflowService;
 use App\Util\BudgetMath;
@@ -24,21 +25,27 @@ final class LigneBudgetaireController extends AbstractController
 
     #[Route('', name: 'api_lignes_budgetaires_list', methods: ['GET'])]
     #[IsGranted(PermissionVoter::READ_LIGNES_BUDGETAIRES)]
-    public function list(LigneBudgetaireRepository $repository): JsonResponse
+    public function list(LigneBudgetaireRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $items = $repository->findBy([], ['code' => 'ASC', 'id' => 'ASC']);
+        $items = $provinceScope->filterByProvince(
+            $items,
+            fn (LigneBudgetaire $l) => $provinceScope->getProvinceIdFromLigne($l)
+        );
 
         return $this->success(array_map(fn (LigneBudgetaire $l) => $this->serialize($l), $items));
     }
 
     #[Route('/{id}', name: 'api_lignes_budgetaires_show', methods: ['GET'])]
     #[IsGranted(PermissionVoter::READ_LIGNES_BUDGETAIRES)]
-    public function show(int $id, LigneBudgetaireRepository $repository): JsonResponse
+    public function show(int $id, LigneBudgetaireRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Ligne budgétaire introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessLigne($item);
 
         return $this->success($this->serialize($item));
     }
@@ -49,6 +56,7 @@ final class LigneBudgetaireController extends AbstractController
         Request $request,
         BudgetRepository $budgetRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         if (!$data || empty($data['libelle']) || !isset($data['montant_alloue']) || empty($data['budget_id'])) {
@@ -59,6 +67,8 @@ final class LigneBudgetaireController extends AbstractController
         if (!$budget) {
             return $this->error('Budget introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessBudget($budget);
 
         $item = new LigneBudgetaire();
         $item->setLibelle(trim((string) $data['libelle']));
@@ -81,11 +91,14 @@ final class LigneBudgetaireController extends AbstractController
         LigneBudgetaireRepository $repository,
         BudgetRepository $budgetRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Ligne budgétaire introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessLigne($item);
 
         $data = $this->decodeJson($request);
         if (isset($data['libelle'])) {
@@ -108,6 +121,7 @@ final class LigneBudgetaireController extends AbstractController
                 if (!$budget) {
                     return $this->error('Budget introuvable', Response::HTTP_NOT_FOUND);
                 }
+                $provinceScope->assertCanAccessBudget($budget);
                 $item->setBudget($budget);
             }
         }
@@ -124,11 +138,14 @@ final class LigneBudgetaireController extends AbstractController
         LigneBudgetaireRepository $repository,
         EngagementWorkflowService $workflow,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Ligne budgétaire introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessLigne($item);
 
         foreach ($item->getEngagements()->toArray() as $engagement) {
             $workflow->releaseBudget($engagement);

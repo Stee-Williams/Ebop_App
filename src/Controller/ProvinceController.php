@@ -5,6 +5,7 @@ namespace App\Controller;
 use App\Controller\Trait\ApiResponseTrait;
 use App\Entity\Province;
 use App\Repository\ProvinceRepository;
+use App\Security\ProvinceScopeService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -18,20 +19,26 @@ final class ProvinceController extends AbstractController
     use ApiResponseTrait;
 
     #[Route('', name: 'api_provinces_list', methods: ['GET'])]
-    public function list(ProvinceRepository $repository): JsonResponse
+    public function list(ProvinceRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $provinces = $repository->findBy([], ['nom' => 'ASC']);
+        $provinces = $provinceScope->filterByProvince(
+            $provinces,
+            static fn (Province $p) => $p->getId()
+        );
 
         return $this->success(array_map(fn (Province $p) => $this->serialize($p), $provinces));
     }
 
     #[Route('/{id}', name: 'api_provinces_show', methods: ['GET'])]
-    public function show(int $id, ProvinceRepository $repository): JsonResponse
+    public function show(int $id, ProvinceRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $province = $repository->find($id);
         if (!$province) {
             return $this->error('Province introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessProvinceId($province->getId());
 
         return $this->success($this->serialize($province));
     }

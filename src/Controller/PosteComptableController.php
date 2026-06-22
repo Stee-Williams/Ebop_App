@@ -6,6 +6,7 @@ use App\Controller\Trait\ApiResponseTrait;
 use App\Entity\PosteComptable;
 use App\Repository\PosteComptableRepository;
 use App\Repository\ProvinceRepository;
+use App\Security\ProvinceScopeService;
 use App\Security\Voter\PermissionVoter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -21,20 +22,26 @@ final class PosteComptableController extends AbstractController
     use ApiResponseTrait;
 
     #[Route('', name: 'api_postes_comptables_list', methods: ['GET'])]
-    public function list(PosteComptableRepository $repository): JsonResponse
+    public function list(PosteComptableRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $items = $repository->findBy([], ['libelle' => 'ASC']);
+        $items = $provinceScope->filterByProvince(
+            $items,
+            fn (PosteComptable $p) => $provinceScope->getProvinceIdFromPoste($p)
+        );
 
         return $this->success(array_map(fn (PosteComptable $p) => $this->serialize($p), $items));
     }
 
     #[Route('/{id}', name: 'api_postes_comptables_show', methods: ['GET'])]
-    public function show(int $id, PosteComptableRepository $repository): JsonResponse
+    public function show(int $id, PosteComptableRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Poste comptable introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessPoste($item);
 
         return $this->success($this->serialize($item));
     }
@@ -45,6 +52,7 @@ final class PosteComptableController extends AbstractController
         Request $request,
         ProvinceRepository $provinceRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         if (!$data || empty($data['libelle'])) {
@@ -57,8 +65,14 @@ final class PosteComptableController extends AbstractController
         $item->setDescription($data['description'] ?? null);
         $item->setType($data['type'] ?? null);
 
-        if (!empty($data['province_id'])) {
-            $province = $provinceRepository->find($data['province_id']);
+        if (!empty($data['province_id']) || $provinceScope->getRestrictedProvinceId() !== null) {
+            $provinceId = $provinceScope->resolveProvinceIdForCreate(
+                !empty($data['province_id']) ? (int) $data['province_id'] : null
+            );
+            if ($provinceId === null) {
+                return $this->error('La province est obligatoire');
+            }
+            $province = $provinceRepository->find($provinceId);
             if (!$province) {
                 return $this->error('Province introuvable', Response::HTTP_NOT_FOUND);
             }
@@ -79,11 +93,14 @@ final class PosteComptableController extends AbstractController
         PosteComptableRepository $repository,
         ProvinceRepository $provinceRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Poste comptable introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessPoste($item);
 
         $data = $this->decodeJson($request);
         if (isset($data['libelle'])) {
@@ -99,10 +116,13 @@ final class PosteComptableController extends AbstractController
             $item->setType($data['type']);
         }
         if (array_key_exists('province_id', $data)) {
-            if ($data['province_id'] === null) {
+            $provinceId = $provinceScope->resolveProvinceIdForCreate(
+                $data['province_id'] === null ? null : (int) $data['province_id']
+            );
+            if ($provinceId === null) {
                 $item->setProvince(null);
             } else {
-                $province = $provinceRepository->find($data['province_id']);
+                $province = $provinceRepository->find($provinceId);
                 if (!$province) {
                     return $this->error('Province introuvable', Response::HTTP_NOT_FOUND);
                 }
@@ -117,12 +137,14 @@ final class PosteComptableController extends AbstractController
 
     #[Route('/{id}', name: 'api_postes_comptables_delete', methods: ['DELETE'])]
     #[IsGranted(PermissionVoter::MANAGE_ADMINISTRATIONS)]
-    public function delete(int $id, PosteComptableRepository $repository, EntityManagerInterface $em): JsonResponse
+    public function delete(int $id, PosteComptableRepository $repository, EntityManagerInterface $em, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Poste comptable introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessPoste($item);
 
         $em->remove($item);
         $em->flush();

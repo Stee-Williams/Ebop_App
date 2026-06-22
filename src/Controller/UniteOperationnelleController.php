@@ -6,6 +6,7 @@ use App\Controller\Trait\ApiResponseTrait;
 use App\Entity\UniteOperationnelle;
 use App\Repository\AdministrationRepository;
 use App\Repository\UniteOperationnelleRepository;
+use App\Security\ProvinceScopeService;
 use App\Security\Voter\PermissionVoter;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -21,20 +22,26 @@ final class UniteOperationnelleController extends AbstractController
     use ApiResponseTrait;
 
     #[Route('', name: 'api_unites_operationnelles_list', methods: ['GET'])]
-    public function list(UniteOperationnelleRepository $repository): JsonResponse
+    public function list(UniteOperationnelleRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $items = $repository->findBy([], ['nom' => 'ASC']);
+        $items = $provinceScope->filterByProvince(
+            $items,
+            fn (UniteOperationnelle $u) => $provinceScope->getProvinceIdFromUnite($u)
+        );
 
         return $this->success(array_map(fn (UniteOperationnelle $u) => $this->serialize($u), $items));
     }
 
     #[Route('/{id}', name: 'api_unites_operationnelles_show', methods: ['GET'])]
-    public function show(int $id, UniteOperationnelleRepository $repository): JsonResponse
+    public function show(int $id, UniteOperationnelleRepository $repository, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Unité opérationnelle introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessUnite($item);
 
         return $this->success($this->serialize($item));
     }
@@ -45,6 +52,7 @@ final class UniteOperationnelleController extends AbstractController
         Request $request,
         AdministrationRepository $administrationRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $data = $this->decodeJson($request);
         if (!$data || empty($data['nom'])) {
@@ -60,6 +68,7 @@ final class UniteOperationnelleController extends AbstractController
             if (!$administration) {
                 return $this->error('Administration introuvable', Response::HTTP_NOT_FOUND);
             }
+            $provinceScope->assertCanAccessAdministration($administration);
             $item->setAdministration($administration);
         }
 
@@ -77,11 +86,14 @@ final class UniteOperationnelleController extends AbstractController
         UniteOperationnelleRepository $repository,
         AdministrationRepository $administrationRepository,
         EntityManagerInterface $em,
+        ProvinceScopeService $provinceScope,
     ): JsonResponse {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Unité opérationnelle introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessUnite($item);
 
         $data = $this->decodeJson($request);
         if (isset($data['nom'])) {
@@ -98,6 +110,7 @@ final class UniteOperationnelleController extends AbstractController
                 if (!$administration) {
                     return $this->error('Administration introuvable', Response::HTTP_NOT_FOUND);
                 }
+                $provinceScope->assertCanAccessAdministration($administration);
                 $item->setAdministration($administration);
             }
         }
@@ -109,12 +122,14 @@ final class UniteOperationnelleController extends AbstractController
 
     #[Route('/{id}', name: 'api_unites_operationnelles_delete', methods: ['DELETE'])]
     #[IsGranted(PermissionVoter::MANAGE_ADMINISTRATIONS)]
-    public function delete(int $id, UniteOperationnelleRepository $repository, EntityManagerInterface $em): JsonResponse
+    public function delete(int $id, UniteOperationnelleRepository $repository, EntityManagerInterface $em, ProvinceScopeService $provinceScope): JsonResponse
     {
         $item = $repository->find($id);
         if (!$item) {
             return $this->error('Unité opérationnelle introuvable', Response::HTTP_NOT_FOUND);
         }
+
+        $provinceScope->assertCanAccessUnite($item);
 
         $em->remove($item);
         $em->flush();
